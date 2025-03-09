@@ -1,1 +1,1 @@
-INSERT INTO warehouses (title, volume created, updated) VALUES ('Main Warehouse', 10000,  CURRENT_TIMESTAMP(),  CURRENT_TIMESTAMP()), ('Additional Warehouse', 5000,  CURRENT_TIMESTAMP(),  CURRENT_TIMESTAMP());
+INSERT INTO warehouses (title, volume, created, updated) VALUES ('Main Warehouse', 10000,  CURRENT_TIMESTAMP(),  CURRENT_TIMESTAMP()), ('Additional Warehouse', 5000,  CURRENT_TIMESTAMP(),  CURRENT_TIMESTAMP());

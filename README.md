@@ -1,6 +1,6 @@
 ## Overview
 
-The repository of notification service
+The repository of warehouse service
 
 ## Endpoints
 

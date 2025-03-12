@@ -64,7 +64,7 @@ func BookItem(w http.ResponseWriter, r *http.Request) {
 	var warehouseItems []models.WarehouseItem
 
 	db := gormdb.GetClient(models.ServiceDatabase)
-	err = db.Where("item_id = ? AND amount >= ? AND status = ?", bookingParams.ItemID, bookingParams.Volume, models.StatusNew).Find(&warehouseItems).Error
+	err = db.Where("item_id = ? AND volume >= ? AND status = ?", bookingParams.ItemID, bookingParams.Volume, models.StatusNew).Find(&warehouseItems).Error
 	if checkError(w, err, category) {
 		return
 	}
@@ -73,22 +73,56 @@ func BookItem(w http.ResponseWriter, r *http.Request) {
 	if len(warehouseItems) > 0 {
 		result = "success"
 		currentTimestamp := int(GetCurrentTimestamp())
-		var newItems []models.WarehouseItem
 
 		// смотрим, есть ли уже забронированый товар
-		err = db.Where("item_id = ? AND status = ?", bookingParams.ItemID, models.StatusBooked).Find(&newItems).Error
+		var bookedItems []models.WarehouseItem
+		err = db.Where("item_id = ? AND status = ?", bookingParams.ItemID, models.StatusBooked).Find(&bookedItems).Error
 		if err != nil {
 			result = "failure"
 			logger.Errorf("Query get booked item error: %v", err)
 		}
 
-		var newItem models.WarehouseItem
-		if len(newItems) > 0 {
-			newItem = newItems[0]
-			err = db.Model(&newItem).Update("volume", newItem.Volume+bookingParams.Volume).Error
+		var bookedItem models.WarehouseItem
+		if len(bookedItems) > 0 {
+			bookedItem = bookedItems[0]
+			err = db.Model(&bookedItem).Update("volume", bookedItem.Volume+bookingParams.Volume).Error
 			if err != nil {
 				result = "failure"
 				logger.Errorf("Cant create new booking item: %v", err)
+			}
+		} else {
+			bookedItem.WarehouseID = warehouseItems[0].ID
+			bookedItem.ItemID = bookingParams.ItemID
+			bookedItem.Volume = bookingParams.Volume
+			bookedItem.Created = currentTimestamp
+			bookedItem.Updated = currentTimestamp
+			bookedItem.Status = models.StatusBooked
+			err = db.Create(&bookedItem).Error
+			if err != nil {
+				result = "failure"
+				logger.Errorf("Cant create new booking item: %v", err)
+			}
+		}
+
+		// уменьшаем незабронированый товар
+		var newItems []models.WarehouseItem
+		err = db.Where("item_id = ? AND status = ?", bookingParams.ItemID, models.StatusNew).Find(&newItems).Error
+		if err != nil {
+			result = "failure"
+			logger.Errorf("Query get new item error: %v", err)
+		}
+		var newItem models.WarehouseItem
+		if len(newItems) > 0 {
+			newItem = newItems[0]
+			if newItem.Volume-bookingParams.Volume < 0 {
+				result = "failure"
+				logger.Errorf("Incorrect volume requested: %v", err)
+			} else {
+				err = db.Model(&newItem).Update("volume", newItem.Volume-bookingParams.Volume).Error
+				if err != nil {
+					result = "failure"
+					logger.Errorf("Cant create new booking item: %v", err)
+				}
 			}
 		} else {
 			newItem.WarehouseID = warehouseItems[0].ID
@@ -104,7 +138,14 @@ func BookItem(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
+		logger.Error("No items in warehouse")
 		result = "failure"
+	}
+
+	err = db.Where("volume = ?", 0).Delete(&warehouseItems).Error
+	if err != nil {
+		result = "failure"
+		logger.Errorf("Cant delete empty items error: %v", err)
 	}
 
 	data := ResponseData{
@@ -146,7 +187,7 @@ func RollbackBook(w http.ResponseWriter, r *http.Request) {
 				}
 
 				var newItems []models.WarehouseItem
-				err = db.Where("item_id = ? AND status = ?", bookingParams.ItemID, bookingParams.Volume, models.StatusNew).Find(&newItems).Error
+				err = db.Where("item_id = ? AND status = ?", bookingParams.ItemID, models.StatusNew).Find(&newItems).Error
 				if checkError(w, err, category) {
 					return
 				}
@@ -158,13 +199,30 @@ func RollbackBook(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				} else {
-					result = "failure"
-					logger.Errorf("Query get new item error: %v", err)
+					currentTimestamp := int(GetCurrentTimestamp())
+					var newItem models.WarehouseItem
+					newItem.WarehouseID = bookedItem.ID
+					newItem.ItemID = bookedItem.ItemID
+					newItem.Volume = bookedItem.Volume
+					newItem.Created = currentTimestamp
+					newItem.Updated = currentTimestamp
+					newItem.Status = models.StatusNew
+					err = db.Create(&newItem).Error
+					if err != nil {
+						result = "failure"
+						logger.Errorf("Cant create new free item: %v", err)
+					}
 				}
 			}
 		} else {
 			result = "failure"
 			logger.Errorf("Query get booked item error: %v", err)
+		}
+
+		err = db.Where("volume = ?", 0).Delete(&bookedItems).Error
+		if err != nil {
+			result = "failure"
+			logger.Errorf("Cant delete empty items error: %v", err)
 		}
 	}
 

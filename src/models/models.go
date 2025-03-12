@@ -1,6 +1,6 @@
 package models
 
-const ServiceDatabase = "NotificationService"
+const ServiceDatabase = "WarehouseService"
 
 type BookingItem struct {
 	ItemID int `json:"id"`
